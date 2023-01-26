@@ -6,29 +6,30 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdatomic.h>
+#include <math.h>
 
-_Atomic bool *copyOfValid;
-_Atomic bool *copyOfComplete;
+// Instruction to run comiple the file
+// compile: gcc -Wall -Wextra -pthread sudoku.c -o sudoku -lm
+// run (verify): ./sudoku puzzle-easy.txt
+// UNDO: run (hard): ./sudoku puzzle-hard.txt 
+
+bool legal;
 int size;
 int **copyofGrid;
 
 typedef struct{
-  int *arr;
-  int length;
-} Set;
-
+  int row;
+  int col;
+  int sqrtSize;
+}coordinate;
 
 void checkPuzzle(int psize, int **grid, bool *complete, bool *valid);
 int readSudokuPuzzle(char *filename, int ***grid);
-Set* init();
-bool contains(Set *set, int element);
-void insert(Set* set, int element);
-void traversePuzzle(int psize, int **grid);
 void* funOfRow(void* arg);
+void* funOfCol(void* arg);
+void* funOfBox(void* arg);
 void printSudokuPuzzle(int psize, int **grid);
 void deleteSudokuPuzzle(int psize, int **grid);
-
-
 
 // takes puzzle size and grid[][] representing sudoku puzzle
 // and tow booleans to be assigned: complete and valid.
@@ -39,8 +40,131 @@ void deleteSudokuPuzzle(int psize, int **grid);
 // to psize For incomplete puzzles, we cannot say anything about validity
 void checkPuzzle(int psize, int **grid, bool *complete, bool *valid) {
   // YOUR CODE GOES HERE and in HELPER FUNCTIONS
-  *valid = true;
+
+  size = psize;
+  copyofGrid = grid;
+  legal = true;
+
+  pthread_t rowListSet[psize];
+  pthread_t colListSet[psize];
+  pthread_t boxListSet[psize];
+
+  //for row and col
+  for(int i=1; i <= psize; i++){
+    for(int j=1; j <= psize; j++){
+      if(j == 1){
+        //printf("ROW: %d\n", i);
+        coordinate *curr = (coordinate *) malloc(sizeof(coordinate));
+        curr->row = i;
+        curr->col = j;
+        curr->sqrtSize = psize;
+        pthread_create(&rowListSet[i], NULL, funOfRow, curr);
+      }
+      if(i == 1){
+        coordinate *curr = (coordinate *) malloc(sizeof(coordinate));
+        curr->row = i;
+        curr->col = j;
+        curr->sqrtSize = psize;
+        pthread_create(&colListSet[j], NULL, funOfCol, curr);
+      }
+    }
+  }
+
+  //for boxes
+  int i = 1;
+  int stSize = sqrt(psize);
+  for(int y = 1; y <= psize; y += stSize){
+    for(int x =1; x <= psize; x += stSize){
+      coordinate *curr = (coordinate *) malloc(sizeof(coordinate));
+      curr->row = y;
+      curr->col = x;
+      curr->sqrtSize = stSize;
+      pthread_create(&boxListSet[i], NULL, funOfBox, curr);
+      i++;
+    }
+  }
+
+  for(int i=1; i<=psize; i++){
+    pthread_join(rowListSet[i], NULL);
+    pthread_join(colListSet[i], NULL);
+    pthread_join(boxListSet[i], NULL);
+  }
+
+  if(legal == true){
+    *valid = true;
+  }else{  
+    *valid = false;
+  }
   *complete = true;
+}
+
+void* funOfRow(void* arg){
+  //size of 10 beacuse traversing from 1 to 9
+  coordinate* curr = (coordinate*) arg;
+  int row = curr->row;
+  //printf("HERE: %d\n", curr->row);
+  int s = size+1;
+  int visited[s];
+  for(int i = 1; i<s; i++){
+    visited[i] = 0;
+  }
+  for(int x=1; x<=size; x++){
+    if(legal == false){
+      pthread_exit(NULL);
+    }else if(visited[copyofGrid[row][x]] != 0){
+      legal = false;
+      pthread_exit(NULL);
+    }else{
+      visited[copyofGrid[row][x]] = 1;
+    }
+  }
+  pthread_exit(NULL);
+}
+
+void* funOfCol(void* arg){
+  //size of 10 beacuse traversing from 1 to 9
+  coordinate* curr = (coordinate*) arg;
+  int col = curr->col;
+  int s = size + 1;
+  int visited[s];
+  for(int i = 1; i<s; i++){
+    visited[i] = 0;
+  }
+  for(int y=1; y<=size; y++){
+    if(legal == false){
+      pthread_exit(NULL);
+    }else if(visited[copyofGrid[y][col]] != 0){
+      legal = false;
+      pthread_exit(NULL);
+    }else{
+      //printf("Before HERE: %d\n", visited[y]);
+      visited[copyofGrid[y][col]] = 1;
+      //printf("After HERE: %d\n", visited[y]);
+    }
+  }
+  pthread_exit(NULL);
+}
+
+void* funOfBox(void* arg){
+  coordinate *curr = (coordinate*) arg;
+  int s = size+1;
+  int visited[s];
+  for(int i = 1; i<s; i++){
+    visited[i] = 0;
+  }
+  for(int i = curr->row; i < curr->row + curr->sqrtSize; i++){
+    for(int j = curr->col; j < curr->col + curr->sqrtSize; j++){
+      if(legal == false){
+        pthread_exit(NULL);
+      } else if(visited[copyofGrid[i][j]] != 0){
+        legal = false;
+        pthread_exit(NULL);
+      }else{
+        visited[copyofGrid[i][j]] = 1;
+      }
+    }
+  }
+  pthread_exit(NULL);
 }
 
 // takes filename and pointer to grid[][]
@@ -64,110 +188,6 @@ int readSudokuPuzzle(char *filename, int ***grid) {
   *grid = agrid;
   return psize;
 }
-
-Set* init(){
-  Set *new_set = malloc(sizeof(Set));
-  new_set->length = 0;
-  new_set->arr = malloc(sizeof(int));
-  return new_set;
-}
-
-bool contains(Set *set, int element){
-  for(int i=0; i<set->length; i++){
-    if(set->arr[i] == element){
-      return true;
-    }
-  }
-  return false;
-}
-
-void insert(Set* set, int element){
-  set->arr = realloc(set->arr, sizeof(int) * (set->length+1));
-  set->arr[set->length] = element;
-  set->length = set->length+1;
-}
-
-void traversePuzzle(int psize, int **grid){
-  pthread_t rowListSet[psize];
-  pthread_t colListSet[psize];
-  pthread_t boxListSet[psize];
-  for(int i=1; i<=psize; i++){
-    pthread_create(&rowListSet[i], NULL, funOfRow, (void *)&i);
-    pthread_create(&colListSet[i], NULL, funOfRow, (void *)&i);
-    pthread_create(&boxListSet[i], NULL, funOfRow, (void *)&i);
-  }
-
-  // for(int row=1; row <= psize; row++){
-  //   for(int col=1; col <= psize; col++){
-  //     int currElement = grid[row][col];
-  //     //put the currElement in the function that 3 sets to check if it already existed or not
-  //     //if visited, give me value of false and stop the function
-  //     if( insert(rowListSet[row], currElement))
-      
-  //   }
-  // }
-
-  for(int i=1; i<=psize; i++){
-    pthread_join(rowListSet[i], NULL);
-    pthread_join(colListSet[i], NULL);
-    pthread_join(boxListSet[i], NULL);
-  }
-}
-
-void* funOfRow(void* arg){
-  Set *set = init();
-  for(int row=1; row<= size; row++){
-    int curr =copyofGrid[row][(int)&arg];
-    if(copyOfValid == false){
-      continue;
-    }
-    else if(contains(set, curr)){
-      copyOfValid = false;
-      continue;
-    }
-    else{
-      insert(set, curr);
-    }
-  }
-  return NULL;
-}
-
-void* funOfCol(void* arg){
-  Set *set = init();
-  for(int col=1; col<= size; col++){
-    int curr =copyofGrid[(int)&arg][col];
-    if(copyOfValid == false){
-      continue;
-    }
-    else if(contains(set, curr)){
-      copyOfValid = false;
-      continue;
-    }
-    else{
-      insert(set, curr);
-    }
-  }
-  return NULL;
-}
-
-// void* funOfBox(void* arg){
-//   Set *set = init();
-//   for(int row=1; row<= size; row++){
-//     int curr =copyofGrid[row][1];
-//     if(copyOfValid == false){
-//       continue;
-//     }
-//     else if(contains(set, curr)){
-//       copyOfValid = false;
-//       continue;
-//     }
-//     else{
-//       insert(set, curr);
-//     }
-//   }
-//   return NULL;
-// }
-
 
 // takes puzzle size and grid[][]
 // prints the puzzle

@@ -1,0 +1,8 @@
+Can verify whether it is valid or not - 10/10
+Starts/joins multiple threads to speedup operation - 5/5
+For NxN complete puzzle, can verify whether it is valid or not - 5/5
+The number of threads is proportional to N - 5/5
+
+compile: gcc -Wall -Wextra -pthread sudoku.c -o sudoku -lm
+run (verify): ./sudoku puzzle-easy.txt
+UNDO: run (hard): ./sudoku puzzle-hard.txt 
